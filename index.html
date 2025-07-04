@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Retail Supply Chain Optimizer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-100 via-white to-blue-200 min-h-screen py-10 font-sans">
+  <div class="max-w-6xl mx-auto px-4">
+    <h1 class="text-3xl font-bold text-center mb-10 text-blue-900">📦 Retail Inventory & Delivery Optimizer</h1>
+
+    <div class="grid md:grid-cols-2 gap-10 mb-12">
+      <div class="bg-white shadow-xl rounded-xl p-6">
+        <h2 class="text-xl font-bold mb-4 text-blue-800">🗂 Inventory Update</h2>
+        <form id="inventoryForm" class="space-y-4">
+          <input name="product_id" placeholder="Product ID" required class="w-full p-3 border rounded" />
+          <input name="product_name" placeholder="Product Name" required class="w-full p-3 border rounded" />
+          <input name="stock" type="number" placeholder="Stock" required class="w-full p-3 border rounded" />
+          <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded">Submit Inventory</button>
+        </form>
+      </div>
+
+      <div class="bg-white shadow-xl rounded-xl p-6">
+        <h2 class="text-xl font-bold mb-4 text-green-800">🚚 Delivery Request</h2>
+        <form id="deliveryForm" class="space-y-4">
+          <input name="order_id" placeholder="Order ID" required class="w-full p-3 border rounded" />
+          <input name="destination" placeholder="Destination" required class="w-full p-3 border rounded" />
+          <input name="priority" type="number" placeholder="Priority (1-5)" required class="w-full p-3 border rounded" />
+          <button type="submit" class="w-full bg-green-600 text-white py-2 rounded">Submit Delivery</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-8">
+      <div>
+        <h3 class="text-xl font-semibold mb-2 text-blue-700">📋 Inventory</h3>
+        <table class="w-full table-auto bg-white rounded shadow">
+          <thead class="bg-blue-100">
+            <tr>
+              <th class="border px-4 py-2">Product ID</th>
+              <th class="border px-4 py-2">Product Name</th>
+              <th class="border px-4 py-2">Stock</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryTable"></tbody>
+        </table>
+      </div>
+
+      <div>
+        <h3 class="text-xl font-semibold mb-2 text-green-700">🚛 Deliveries</h3>
+        <table class="w-full table-auto bg-white rounded shadow">
+          <thead class="bg-green-100">
+            <tr>
+              <th class="border px-4 py-2">Order ID</th>
+              <th class="border px-4 py-2">Destination</th>
+              <th class="border px-4 py-2">Priority</th>
+              <th class="border px-4 py-2">Route</th>
+              <th class="border px-4 py-2">Delete</th>
+            </tr>
+          </thead>
+          <tbody id="deliveryTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mt-10">
+      <h3 class="text-xl font-bold text-center mb-4 text-purple-700">📊 Deliveries per Zone</h3>
+      <canvas id="zoneChart" width="400" height="200"></canvas>
+    </div>
+  </div>
+
+  <script>
+    async function fetchData(url) {
+      const res = await fetch(url);
+      return res.json();
+    }
+
+    async function loadInventory() {
+      const data = await fetchData('/api/inventory');
+      const tbody = document.getElementById('inventoryTable');
+      tbody.innerHTML = data.map(item => `
+        <tr>
+          <td class="border px-4 py-2">${item.product_id}</td>
+          <td class="border px-4 py-2">${item.product_name}</td>
+          <td class="border px-4 py-2">${item.stock}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function loadDeliveries() {
+      const data = await fetchData('/api/delivery');
+      const tbody = document.getElementById('deliveryTable');
+      tbody.innerHTML = data.map(d => `
+        <tr>
+          <td class="border px-4 py-2">${d.order_id}</td>
+          <td class="border px-4 py-2">${d.destination}</td>
+          <td class="border px-4 py-2">${d.priority}</td>
+          <td class="border px-4 py-2">${d.route}</td>
+          <td class="border px-4 py-2">
+            <button onclick="deleteDelivery('${d.order_id}')" class="text-red-500 hover:text-red-700">🗑</button>
+          </td>
+        </tr>
+      `).join('');
+      loadChart();
+    }
+
+    async function deleteDelivery(order_id) {
+      if (!confirm(`Delete delivery ${order_id}?`)) return;
+      await fetch(`/api/delivery/${order_id}`, { method: 'DELETE' });
+      loadDeliveries();
+    }
+
+    async function loadChart() {
+      const data = await fetchData('/api/delivery');
+      const zoneCounts = {};
+      data.forEach(d => {
+        zoneCounts[d.route] = (zoneCounts[d.route] || 0) + 1;
+      });
+      const ctx = document.getElementById('zoneChart').getContext('2d');
+      if (window.zoneChart) window.zoneChart.destroy();
+      window.zoneChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(zoneCounts),
+          datasets: [{
+            label: 'Deliveries per Zone',
+            data: Object.values(zoneCounts),
+            backgroundColor: '#34D399'
+          }]
+        },
+        options: {
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    document.getElementById('inventoryForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const form = e.target;
+      const data = new URLSearchParams(new FormData(form));
+      await fetch('/submit-inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: data
+      });
+      form.reset();
+      loadInventory();
+    });
+
+    document.getElementById('deliveryForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const form = e.target;
+      const data = new URLSearchParams(new FormData(form));
+      await fetch('/submit-delivery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: data
+      });
+      form.reset();
+      loadDeliveries();
+    });
+
+    loadInventory();
+    loadDeliveries();
+  </script>
+</body>
+</html>
+
